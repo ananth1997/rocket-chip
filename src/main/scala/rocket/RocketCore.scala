@@ -846,12 +846,14 @@ object RVFIMonitor {
     val mem_rdata = UInt(width=xlen)
     val mem_wdata = UInt(width=xlen)
 
-    val mcycle_id = UInt(width=xlen)
-    val mcycle_ex = UInt(width=xlen)
+    val mcycle = UInt(width=xlen)
+    val mcycle_wdata = UInt(width=xlen)
+    val mcycle_wmask = UInt(width=xlen)
 
     val retireWidth = p(TileKey).core.retireWidth
-    val retire_id = UInt(INPUT, log2Up(1+retireWidth))
-    val retire_ex = UInt(INPUT, log2Up(1+retireWidth))
+    val retire = UInt(INPUT, log2Up(1+retireWidth))
+    val retire_wdata = UInt(INPUT, log2Up(1+retireWidth))
+    val retire_wmask = UInt(INPUT, log2Up(1+retireWidth))
 
     override def cloneType: this.type = new RVFI_Base(xlen).asInstanceOf[this.type]
   }
@@ -929,14 +931,14 @@ class RVFIMonitor(implicit p: Parameters) extends BlackBox {
     io.rvfi_mem_rdata := content.map(_.mem_rdata).asUInt
     io.rvfi_mem_wdata := content.map(_.mem_wdata).asUInt
 
-    io.rvfi_csr_mcycle_rdata := content.map(_.mcycle_id).asUInt
+    io.rvfi_csr_mcycle_rdata := content.map(_.mcycle).asUInt
     io.rvfi_csr_mcycle_rmask := (-1).S.asUInt
-    io.rvfi_csr_mcycle_wdata := content.map(_.mcycle_ex).asUInt
-    io.rvfi_csr_mcycle_wmask := (-1).S.asUInt
-    io.rvfi_csr_instret_rdata := content.map(_.retire_id).asUInt
+    io.rvfi_csr_mcycle_wdata := content.map(_.mcycle_wdata).asUInt
+    io.rvfi_csr_mcycle_wmask := content.map(_.mcycle_wmask).asUInt
+    io.rvfi_csr_instret_rdata := content.map(_.retire).asUInt
     io.rvfi_csr_instret_rmask := (-1).S.asUInt
-    io.rvfi_csr_instret_wdata := content.map(_.retire_ex).asUInt
-    io.rvfi_csr_instret_wmask := (-1).S.asUInt
+    io.rvfi_csr_instret_wdata := content.map(_.retire_wdata).asUInt
+    io.rvfi_csr_instret_wmask := content.map(_.retire_wmask).asUInt
   }
 }
 
@@ -1028,10 +1030,12 @@ class RocketWithRVFI(implicit p: Parameters) extends Rocket()(p) {
   inst_commit.mem_rmask := Fill(p(XLen)/8, dmem_resp_valid)
   inst_commit.mem_wdata := Reg(next=io.dmem.s1_data.data)
 
-  inst_commit.mcycle_id := csr_wb_mcycle_id_reg
-  inst_commit.mcycle_ex := csr_wb_mcycle_ex_reg
-  inst_commit.retire_id := csr_wb_instret_id_reg
-  inst_commit.retire_ex := csr_wb_instret_ex_reg
+  inst_commit.mcycle := csr.io.time
+  inst_commit.mcycle_wdata := csr.io.rw.wdata
+  inst_commit.mcycle_wmask := Mux(csr.io.rw.cmd===CSR.W && csr.io.rw.addr==CSRs.mcycle, (-1).S.asUInt, UInt(0))
+  inst_commit.retire := csr.io.retire
+  inst_commit.retire_wdata := csr.io.rw.wdata
+  inst_commit.retire_wmask := Mux(csr.io.rw.cmd===CSR.W && csr.io.rw.addr==CSRs.instret, (-1).S.asUInt, UInt(0))
 
   val mem_wvalid = Reg(next=Reg(next=io.dmem.req.valid)) && !Reg(next=io.dmem.s1_kill) && !io.dmem.s2_nack && Reg(next=Reg(next=isWrite(io.dmem.req.bits.cmd)))
   when(mem_wvalid) {
